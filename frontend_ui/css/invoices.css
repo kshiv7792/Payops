@@ -1,0 +1,2 @@
+.list-card { overflow: hidden; }.invoice-toolbar { padding: 12px 14px; display: flex; gap: 9px; border-bottom: 1px solid #edf0f5; }.invoice-toolbar .search-field { min-width: 220px; flex: 1; }.invoice-toolbar select { min-width: 125px; height: 36px; }
+.pagination { padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; color: #8993a5; font-size: 9px; }.pagination>div { display: flex; gap: 6px; }

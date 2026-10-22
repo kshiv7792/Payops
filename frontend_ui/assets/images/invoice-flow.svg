@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 320" role="img" aria-label="Invoice processing illustration">
+  <rect width="520" height="320" rx="22" fill="#f5f8ff"/>
+  <rect x="173" y="41" width="170" height="229" rx="14" fill="#fff" stroke="#e4eaf5" stroke-width="2"/>
+  <path d="M208 90h100M208 119h100M208 148h75M208 194h100M208 222h70" stroke="#dce4f1" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="345" cy="214" r="63" fill="#e9f7f1"/>
+  <path d="m319 214 18 18 35-39" fill="none" stroke="#16a37a" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="139" cy="112" r="35" fill="#edf3ff"/>
+  <path d="M124 112h30m-15-15v30" stroke="#2864ed" stroke-width="6" stroke-linecap="round"/>
+</svg>
