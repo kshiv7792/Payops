@@ -11,7 +11,7 @@ import {
   Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
-import { api, clearToken, downloadCsv, getToken, saveToken } from "@/lib/api";
+import { API_URL, api, clearToken, downloadCsv, getToken, saveToken } from "@/lib/api";
 import { Button, Card, EmptyState, LoadingPanel, StatusPill } from "@/components/ui";
 import type { Dashboard, Invoice, User, Vendor } from "@/types";
 
@@ -524,14 +524,13 @@ function InvoiceDetail({ invoice, user, busy, onBack, onOpenInvoice, onApprove, 
   const [form, setForm] = useState({ invoice_number: invoice.invoice_number, vendor_name: invoice.vendor_name, invoice_date: invoice.invoice_date ?? "", due_date: invoice.due_date ?? "", subtotal: invoice.subtotal, total_tax: invoice.total_tax, total_amount: invoice.total_amount });
   const canApprove = ["OWNER", "MANAGER"].includes(user.role);
   const canPay = ["OWNER", "ACCOUNTANT"].includes(user.role);
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
   const save = async () => { await onEdit({ ...form, invoice_date: form.invoice_date || null, due_date: form.due_date || null }); setEditing(false); };
   useEffect(() => {
     if (!invoice.file_url) { setDocumentUrl(""); return; }
     let active = true;
     let objectUrl = "";
     setDocumentError("");
-    fetch(`${apiUrl}${invoice.file_url}`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } })
+    fetch(`${API_URL}${invoice.file_url}`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } })
       .then(async (response) => {
         if (!response.ok) throw new Error("The attached invoice document could not be loaded.");
         return response.blob();
@@ -543,7 +542,7 @@ function InvoiceDetail({ invoice, user, busy, onBack, onOpenInvoice, onApprove, 
       })
       .catch((error: unknown) => setDocumentError(error instanceof Error ? error.message : "The attached invoice document could not be loaded."));
     return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [apiUrl, invoice.file_url]);
+  }, [invoice.file_url]);
   return <div>
     <div className="detail-back"><button className="back-button" onClick={onBack}><ArrowLeft size={16} /> All invoices</button><span className="crumb-slash">/</span><strong>{invoice.invoice_number}</strong></div>
     <PageHeading title={invoice.invoice_number} description={`${invoice.vendor_name} · Added ${shortDate(invoice.invoice_date)}`} actions={<>
