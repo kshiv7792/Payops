@@ -33,7 +33,11 @@ from .services.validation import validate_invoice
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("invoiceai")
-UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", Path(__file__).resolve().parents[2] / "uploads")).resolve()
+if os.getenv("VERCEL") == "1":
+    UPLOAD_DIR = Path("/tmp/payops-uploads")
+else:
+    default_upload_dir = Path(__file__).resolve().parents[2] / "uploads"
+    UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or default_upload_dir).resolve()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 file_storage = LocalFileStorage(UPLOAD_DIR)
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "20"))
