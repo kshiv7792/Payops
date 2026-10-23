@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import AIMessage, Approval, Company, Invoice, InvoiceItem, InvoiceValidation, Payment, User, Vendor, utcnow
+from .models import AIMessage, Approval, AuthSession, Company, Invoice, InvoiceItem, InvoiceValidation, Payment, User, Vendor, utcnow
 from .security import hash_password
 
 
@@ -23,6 +23,7 @@ def seed_demo(db: Session, reset: bool = False) -> None:
         db.query(Vendor).delete()
         if user:
             company_user_ids = select(User.id).where(User.company_id == user.company_id)
+            db.query(AuthSession).filter(AuthSession.user_id.in_(company_user_ids)).delete(synchronize_session=False)
             db.query(AIMessage).filter(AIMessage.user_id.in_(company_user_ids)).delete(synchronize_session=False)
             company = db.get(Company, user.company_id)
             if company:

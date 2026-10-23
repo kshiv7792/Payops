@@ -1,10 +1,13 @@
+import hashlib
 import os
 import tempfile
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pymupdf
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 test_root = Path(tempfile.gettempdir()) / f"invoiceai-tests-{uuid.uuid4().hex}"
 test_root.mkdir()
@@ -17,15 +20,99 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.database import SessionLocal  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import Invoice, User  # noqa: E402
+from app.models import AuthSession, Invoice, User  # noqa: E402
 from app.security import hash_password  # noqa: E402
-from sqlalchemy import select  # noqa: E402
 
 
 def login(client: TestClient, email: str = "demo@invoiceai.local", password: str = "Demo@123") -> str:
     response = client.post("/api/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200, response.text
     return response.json()["access_token"]
+
+
+def test_login_creates_hashed_sessions_and_supports_multiple_devices():
+    with TestClient(app) as client:
+        first_response = client.post(
+            "/api/auth/login",
+            json={"email": "demo@invoiceai.local", "password": "Demo@123"},
+        )
+        assert first_response.status_code == 200, first_response.text
+        first_token = first_response.json()["access_token"]
+        assert first_response.json()["token_type"] == "bearer"
+
+        second_token = login(client)
+        assert second_token != first_token
+
+        with SessionLocal() as db:
+            first_session = db.scalar(
+                select(AuthSession).where(
+                    AuthSession.token_hash == hashlib.sha256(first_token.encode()).hexdigest()
+                )
+            )
+            second_session = db.scalar(
+                select(AuthSession).where(
+                    AuthSession.token_hash == hashlib.sha256(second_token.encode()).hexdigest()
+                )
+            )
+            assert first_session is not None
+            assert second_session is not None
+            assert isinstance(first_session.id, int)
+            assert first_session.user_id == second_session.user_id
+            assert first_session.token_hash != first_token
+            assert second_session.token_hash != second_token
+            assert first_session.expires_at is not None
+            assert len(first_session.token_hash) == 64
+
+            session_columns = AuthSession.__table__.c
+            assert session_columns.id.type.python_type is int
+            assert session_columns.user_id.type.python_type is str
+            user_id_fk = next(iter(session_columns.user_id.foreign_keys))
+            assert user_id_fk.target_fullname == "users.id"
+            assert session_columns.token_hash.type.length == 128
+            assert session_columns.created_at.type.timezone is True
+            assert session_columns.expires_at.type.timezone is True
+
+        first_headers = {"Authorization": f"Bearer {first_token}"}
+        second_headers = {"Authorization": f"Bearer {second_token}"}
+        assert client.post("/api/auth/logout", headers=first_headers).status_code == 200
+        assert client.get("/api/auth/me", headers=first_headers).status_code == 401
+        assert client.get("/api/auth/me", headers=second_headers).status_code == 200
+
+
+def test_session_protection_expiry_logout_and_health():
+    with TestClient(app) as client:
+        token = login(client)
+        headers = {"Authorization": f"Bearer {token}"}
+        assert client.get("/api/invoices?page=1", headers=headers).status_code == 200
+        assert client.get("/api/dashboard/summary", headers=headers).status_code == 200
+        assert client.get("/api/health").status_code == 200
+        assert client.get(
+            "/api/invoices?page=1",
+            headers={"Authorization": "Bearer invalid-session-token"},
+        ).status_code == 401
+
+        with SessionLocal() as db:
+            auth_session = db.scalar(
+                select(AuthSession).where(
+                    AuthSession.token_hash == hashlib.sha256(token.encode()).hexdigest()
+                )
+            )
+            assert auth_session is not None
+            auth_session.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+            db.commit()
+        assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+        other_token = login(client)
+        other_headers = {"Authorization": f"Bearer {other_token}"}
+        response = client.post("/api/auth/logout", headers=other_headers)
+        assert response.status_code == 200
+        assert client.get("/api/auth/me", headers=other_headers).status_code == 401
+
+        active_token = login(client)
+        assert client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer {active_token}"},
+        ).status_code == 200
 
 
 def test_seeded_demo_and_chat_are_database_grounded():

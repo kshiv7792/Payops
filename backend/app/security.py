@@ -1,17 +1,17 @@
+import hashlib
 import os
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
 from pwdlib import PasswordHash
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import User
+from .models import AuthSession, User
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "local-demo-only-change-me-before-deployment")
-ALGORITHM = "HS256"
 password_hash = PasswordHash.recommended()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
@@ -24,9 +24,16 @@ def verify_password(password: str, hashed: str) -> bool:
     return password_hash.verify(password, hashed)
 
 
-def create_access_token(user: User) -> str:
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def create_session_token(user: User, db: Session) -> str:
+    token = secrets.token_urlsafe(64)
     expiry = datetime.now(timezone.utc) + timedelta(hours=int(os.getenv("JWT_EXPIRE_HOURS", "12")))
-    return jwt.encode({"sub": user.id, "role": user.role, "exp": expiry}, SECRET_KEY, algorithm=ALGORITHM)
+    db.add(AuthSession(user_id=user.id, token_hash=_token_hash(token), expires_at=expiry))
+    db.commit()
+    return token
 
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
@@ -35,17 +42,31 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         detail="Your session has expired. Please sign in again.",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = payload.get("sub")
-        if not user_id:
-            raise unauthorized
-    except JWTError as exc:
-        raise unauthorized from exc
-    user = db.get(User, user_id)
+    auth_session = db.scalar(
+        select(AuthSession).where(AuthSession.token_hash == _token_hash(token))
+    )
+    if not auth_session:
+        raise unauthorized
+
+    expires_at = auth_session.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at <= datetime.now(timezone.utc):
+        raise unauthorized
+
+    user = db.get(User, auth_session.user_id)
     if not user:
         raise unauthorized
     return user
+
+
+def revoke_session_token(token: str, db: Session) -> None:
+    auth_session = db.scalar(
+        select(AuthSession).where(AuthSession.token_hash == _token_hash(token))
+    )
+    if auth_session:
+        db.delete(auth_session)
+        db.commit()
 
 
 def require_roles(*roles: str):

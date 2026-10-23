@@ -24,7 +24,15 @@ from .models import AIMessage, Approval, Company, Invoice, InvoiceItem, InvoiceV
 from .schemas.assistant import ChatInput
 from .schemas.auth import LoginInput, RegisterInput
 from .schemas.invoices import DecisionInput, InvoiceEditInput, PaymentInput
-from .security import create_access_token, get_current_user, hash_password, require_roles, verify_password
+from .security import (
+    create_session_token,
+    get_current_user,
+    hash_password,
+    oauth2_scheme,
+    require_roles,
+    revoke_session_token,
+    verify_password,
+)
 from .seed import seed_demo
 from .services.documents import DocumentProcessingError, extract_invoice
 from .services.assistant import answer_from_workspace, refine_grounded_answer
@@ -175,7 +183,7 @@ def login(payload: LoginInput, db: Session = Depends(get_db)):
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Email or password is incorrect.")
     return {
-        "access_token": create_access_token(user),
+        "access_token": create_session_token(user, db),
         "token_type": "bearer",
         "user": {"id": user.id, "name": user.name, "email": user.email, "role": user.role, "company_id": user.company_id},
         "company": {"name": user.company.name, "gstin": user.company.gstin},
@@ -194,10 +202,16 @@ def register(payload: RegisterInput, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     return {
-        "access_token": create_access_token(user), "token_type": "bearer",
+        "access_token": create_session_token(user, db), "token_type": "bearer",
         "user": {"id": user.id, "name": user.name, "email": user.email, "role": user.role, "company_id": user.company_id},
         "company": {"name": company.name, "gstin": company.gstin},
     }
+
+
+@app.post("/api/auth/logout")
+def logout(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    revoke_session_token(token, db)
+    return {"message": "Logged out."}
 
 
 @app.get("/api/auth/me")
@@ -659,7 +673,7 @@ def reset_demo(db: Session = Depends(get_db), user: User = Depends(require_roles
         raise HTTPException(status_code=500, detail="Demo account could not be restored after reset.")
     return {
         "message": "Demo workspace data has been reset.",
-        "access_token": create_access_token(renewed_user),
+        "access_token": create_session_token(renewed_user, db),
         "user": {"id": renewed_user.id, "name": renewed_user.name, "email": renewed_user.email, "role": renewed_user.role, "company_id": renewed_user.company_id},
         "company": {"name": renewed_user.company.name},
     }
